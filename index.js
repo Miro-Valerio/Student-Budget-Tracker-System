@@ -11,12 +11,11 @@ let goals = [];
 let weekId = 1;
 let goalId = 1;
 
-const ALLOWANCE   = 500;
-const SAVE_TARGET = 200;
-
-app.get('/', (req, res) => {
-  res.send(' Student Weekly Budget API is running!');
+//HOME
+app.get("/", (req, res) => {
+  res.send(" Student Budget API Running");
 });
+
 
 // GET all weeks
 app.get("/weeks", (req, res) => {
@@ -30,32 +29,38 @@ app.get("/weeks/:id", (req, res) => {
   res.json(week);
 });
 
-// POST add a week
-// Body:  weekLabel, commuteDays 
+// CREATE week
 app.post("/weeks", (req, res) => {
-  const { weekLabel, commuteDays } = req.body;
+  const { weekLabel, allowance, spent, saveTarget } = req.body;
 
-  if (!weekLabel || commuteDays === undefined) {
-    return res.status(400).json({ message: "weekLabel and commuteDays are required." });
-  }
-  if (commuteDays < 0 || commuteDays > 7) {
-    return res.status(400).json({ message: "commuteDays must be 0 to 7." });
+  if (!weekLabel || allowance === undefined || spent === undefined || saveTarget === undefined) {
+    return res.status(400).json({
+      message: "weekLabel, allowance, spent, saveTarget are required"
+    });
   }
 
-  const commuteTotal = commuteDays * 30;
-  const spent        = commuteTotal;
-  const saved        = ALLOWANCE - spent;
-  const metTarget    = saved >= SAVE_TARGET;
+  if (allowance <= 0) {
+    return res.status(400).json({ message: "Allowance must be greater than 0" });
+  }
+
+  if (spent < 0) {
+    return res.status(400).json({ message: "Spent cannot be negative" });
+  }
+
+  if (spent > allowance) {
+    return res.status(400).json({ message: "Spent cannot exceed allowance" });
+  }
+
+  const saved = allowance - spent;
+  const metTarget = saved >= saveTarget;
 
   const newWeek = {
     id: weekId++,
     weekLabel,
-    allowance: ALLOWANCE,
-    commuteDays,
-    commuteTotal,
+    allowance,
     spent,
     saved,
-    saveTarget: SAVE_TARGET,
+    saveTarget,
     metTarget,
     createdAt: new Date().toISOString(),
   };
@@ -64,34 +69,68 @@ app.post("/weeks", (req, res) => {
   res.status(201).json(newWeek);
 });
 
-// DELETE a week
+// UPDATE week (EDIT)
+app.put("/weeks/:id", (req, res) => {
+  const week = weeks.find(w => w.id == req.params.id);
+  if (!week) return res.status(404).json({ message: "Week not found" });
+
+  const { weekLabel, allowance, spent, saveTarget } = req.body;
+
+  if (allowance !== undefined && allowance <= 0) {
+    return res.status(400).json({ message: "Allowance must be greater than 0" });
+  }
+
+  if (spent !== undefined && spent < 0) {
+    return res.status(400).json({ message: "Spent cannot be negative" });
+  }
+
+  const newAllowance = allowance ?? week.allowance;
+  const newSpent = spent ?? week.spent;
+
+  if (newSpent > newAllowance) {
+    return res.status(400).json({ message: "Spent cannot exceed allowance" });
+  }
+
+  // update fields
+  week.weekLabel = weekLabel ?? week.weekLabel;
+  week.allowance = newAllowance;
+  week.spent = newSpent;
+  week.saveTarget = saveTarget ?? week.saveTarget;
+
+  // recalculate
+  week.saved = week.allowance - week.spent;
+  week.metTarget = week.saved >= week.saveTarget;
+
+  res.json({ message: "Week updated", week });
+});
+
+// DELETE week
 app.delete("/weeks/:id", (req, res) => {
   const index = weeks.findIndex(w => w.id == req.params.id);
   if (index === -1) return res.status(404).json({ message: "Week not found" });
+
   weeks.splice(index, 1);
-  res.json({ message: "Week deleted." });
+  res.json({ message: "Week deleted" });
 });
 
-// GET overall summary
+//SUMMARY
 app.get("/summary/all", (req, res) => {
-  const totalWeeks   = weeks.length;
-  const totalSaved   = weeks.reduce((s, w) => s + w.saved, 0);
-  const totalSpent   = weeks.reduce((s, w) => s + w.spent, 0);
-  const metCount     = weeks.filter(w => w.metTarget).length;
+  const totalWeeks = weeks.length;
+  const totalSaved = weeks.reduce((s, w) => s + w.saved, 0);
+  const totalSpent = weeks.reduce((s, w) => s + w.spent, 0);
+  const metCount = weeks.filter(w => w.metTarget).length;
 
   res.json({
     totalWeeks,
-    totalAllowance: totalWeeks * ALLOWANCE,
+    totalAllowance: weeks.reduce((s, w) => s + w.allowance, 0),
     totalSpent,
     totalSaved,
     weeksMetTarget: metCount,
     weeksMissed: totalWeeks - metCount,
-    averageSaved: totalWeeks > 0 ? (totalSaved / totalWeeks).toFixed(2) : "0.00",
   });
 });
 
-
-
+//CRUD
 // GET all goals
 app.get("/goals", (req, res) => {
   res.json(goals);
@@ -104,16 +143,12 @@ app.get("/goals/:id", (req, res) => {
   res.json(goal);
 });
 
-// POST create a goal
-// Body: { name, targetAmount }
+// CREATE goal
 app.post("/goals", (req, res) => {
   const { name, targetAmount } = req.body;
 
   if (!name || !targetAmount) {
-    return res.status(400).json({ message: "name and targetAmount are required." });
-  }
-  if (targetAmount <= 0) {
-    return res.status(400).json({ message: "targetAmount must be greater than 0." });
+    return res.status(400).json({ message: "name and targetAmount required" });
   }
 
   const newGoal = {
@@ -131,35 +166,60 @@ app.post("/goals", (req, res) => {
   res.status(201).json(newGoal);
 });
 
-// DELETE a goal
+// UPDATE goal (EDIT)
+app.put("/goals/:id", (req, res) => {
+  const goal = goals.find(g => g.id == req.params.id);
+  if (!goal) return res.status(404).json({ message: "Goal not found" });
+
+  const { name, targetAmount } = req.body;
+
+  goal.name = name ?? goal.name;
+  goal.targetAmount = targetAmount ?? goal.targetAmount;
+
+  goal.remaining = Math.max(0, goal.targetAmount - goal.currentAmount);
+  goal.progressPercent = Math.min(
+    100,
+    ((goal.currentAmount / goal.targetAmount) * 100).toFixed(1)
+  );
+  goal.achieved = goal.currentAmount >= goal.targetAmount;
+
+  res.json({ message: "Goal updated", goal });
+});
+
+// DELETE goal
 app.delete("/goals/:id", (req, res) => {
   const index = goals.findIndex(g => g.id == req.params.id);
   if (index === -1) return res.status(404).json({ message: "Goal not found" });
+
   goals.splice(index, 1);
-  res.json({ message: "Goal deleted." });
+  res.json({ message: "Goal deleted" });
 });
 
-// POST contribute to a goal
-// Body: { amount }
+// CONTRIBUTE to goal
 app.post("/goals/:id/contribute", (req, res) => {
   const goal = goals.find(g => g.id == req.params.id);
   if (!goal) return res.status(404).json({ message: "Goal not found" });
 
   const { amount } = req.body;
+
   if (!amount || amount <= 0) {
-    return res.status(400).json({ message: "Amount must be greater than 0." });
-  }
-  if (goal.achieved) {
-    return res.status(400).json({ message: "Goal already achieved." });
+    return res.status(400).json({ message: "Amount must be greater than 0" });
   }
 
-  goal.currentAmount   += amount;
-  goal.remaining        = Math.max(0, goal.targetAmount - goal.currentAmount);
-  goal.progressPercent  = Math.min(100, parseFloat(((goal.currentAmount / goal.targetAmount) * 100).toFixed(1)));
-  goal.achieved         = goal.currentAmount >= goal.targetAmount;
+  if (goal.achieved) {
+    return res.status(400).json({ message: "Goal already achieved" });
+  }
+
+  goal.currentAmount += amount;
+  goal.remaining = Math.max(0, goal.targetAmount - goal.currentAmount);
+  goal.progressPercent = Math.min(
+    100,
+    ((goal.currentAmount / goal.targetAmount) * 100).toFixed(1)
+  );
+  goal.achieved = goal.currentAmount >= goal.targetAmount;
 
   res.json({
-    message: goal.achieved ? "Goal achieved!" : "Contribution recorded.",
+    message: goal.achieved ? "Goal achieved!" : "Contribution added",
     goal,
   });
 });
