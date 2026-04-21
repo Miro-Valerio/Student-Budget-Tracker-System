@@ -2,7 +2,7 @@
   "name": "student-budget-api",
   "version": "1.0.0",
   "description": "Student Weekly Budget Tracker - SIA101",
-  "main": "server.js",
+  "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
